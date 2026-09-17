@@ -154,7 +154,7 @@ int main(void) {
     screen_add(&s, widget_new(&BUTTON_VT, 13, "Cancel"));
 
     printf("frame 1:\n");
-    screen_render(&s);
+    screen_render(&s);g
     screen_dispatch(&s, 1);
 
     /* TODO 닫힌(closed) 위젯을 여기서 정리(free + 해당 슬롯 NULL)할 필요가 있음 */
