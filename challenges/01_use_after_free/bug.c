@@ -7,7 +7,7 @@
  *   들고 있고, 이벤트를 나눠준 뒤(dispatch) 한 프레임을 그린다(render).
  *
  * [기대 동작]
- *   버튼/라벨/다이얼로그를 그리고, 닫기 이벤트 후 남은 위젯만 다시 그린 뒤
+ *   버튼/라벨/다이얼로그를 그리고, 닫기 이벤트 후 남은 위젯(버튼, 라벨)만 다시 그린 뒤
  *   정상 종료(0).
  *
  * [증상]
@@ -35,8 +35,10 @@
  *
  * TODO: "해제"와 "슬롯 정리"를 한 곳에서 같이 하세요. 위젯 자신은 Screen 을 모르므로
  *       (dialog_on_event 는 self 만 안다) 이벤트 핸들러에서는 closed 표시만 남기고,
- *       Screen 쪽에서 closed 위젯을 free 한 뒤 그 슬롯을 NULL 로 만드는 편이 자연스럽습니다.
+ *       Screen 쪽에서 closed 위젯을 free 한 뒤 그 슬롯을 NULL 로 만드는 편이 자연스럽습니다. 
  *       이후 dispatch/render 루프가 NULL 슬롯을 건너뛰게 하세요. "해제 = 소유 포인터 무효화".
+ *       => dialog_on_event에서 메모리 해제한 후 dispatch에서 슬롯 NULL처리하는 것과 무슨 차이?
+ * 
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,7 +85,7 @@ static void widget_noop_event(Widget *self, int code) { (void)self; (void)code; 
 /* 다이얼로그는 이벤트 코드 1(닫기)을 받으면 스스로 정리(파괴)된다 */
 static void dialog_on_event(Widget *self, int code);
 
-// 각 VTable 정의
+// 각 VTable 정의 
 static const VTable BUTTON_VT = { button_render, widget_noop_event };
 static const VTable LABEL_VT  = { label_render,  widget_noop_event };
 static const VTable DIALOG_VT = { dialog_render, dialog_on_event  };
@@ -125,25 +127,37 @@ static void screen_add(Screen *s, Widget *w) {
 }
 
 // count <= MAX_WIDGETS 
+// sol : 메모리 해제와 슬롯 NULL처리 한번에
+// 위젯은 스크린을 모르기 때문에 파라미터가 스크린인 함수에서 처리
 static void screen_dispatch(Screen *s, int code) {
     for (int i = 0; i < s->count; i++) {
+        if (s->items[i] == NULL) // _ljw add
+            continue;
         Widget *w = s->items[i];
         w->vtbl->on_event(w, code);
+        if (w->closed == 1) {   // _ljw add
+            widget_destroy(w); 
+            s->items[i] = NULL;
+        }
     }
 }
 
-// 스크린에 위젯 하나씩 그림
+// 입력된 스크린 주소에 위젯 출력
 static void screen_render(Screen *s) {
     for (int i = 0; i < s->count; i++) {
+        if (s->items[i] == NULL) // _ljw add
+            continue;            
         Widget *w = s->items[i];
         w->vtbl->render(w);      
     }
 }
 
+// 코드를 1로 받으면 해당 위젯 메모리 해제
+// 메모리 해제를 screen_dispatch로 위임
 static void dialog_on_event(Widget *self, int code) {
     if (code == 1) {
         self->closed = 1;
-        widget_destroy(self);   
+        // widget_destroy(self); // _ljw comment out 
     }
 }
 
@@ -164,6 +178,7 @@ static char *app_build_status(const char *text) {
 int main(void) {
     Screen s = { .count = 0 };
 
+    // screen에 widget(위젯) 추가
     screen_add(&s, widget_new(&LABEL_VT,  10, "Welcome"));
     screen_add(&s, widget_new(&BUTTON_VT, 11, "OK"));
     screen_add(&s, widget_new(&DIALOG_VT, 12, "Are you sure?"));  /* items[2] */
@@ -179,7 +194,7 @@ int main(void) {
     printf("%s\n", status);
 
     printf("frame 2:\n");
-    screen_render(&s); // <- ※여기서 Welcome, OK까지 실행되고 seg fault 걸림
+    screen_render(&s); // <- ※여기서 seg fault 걸림
 
     free(status);
     for (int i = 0; i < s.count; i++) free(s.items[i]);
