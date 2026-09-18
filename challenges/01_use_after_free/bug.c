@@ -44,11 +44,13 @@
 
 typedef struct Widget Widget;
 
+// Widget을 매개 변수로 받는 함수 포인터 모음
 typedef struct {
     void (*render)(Widget *self);
     void (*on_event)(Widget *self, int code);
 } VTable;
 
+// 위젯은 V테이블과 id,closed,label을 변수로 갖는 구조체이다.
 struct Widget {
     const VTable *vtbl; 
     int id;
@@ -56,6 +58,9 @@ struct Widget {
     char label[24];
 };
 
+// 스크린은 최대 8개의 위젯을 갖는다.
+// Q. #define으로 정의한 이유는 뭘까?
+// A. 
 #define MAX_WIDGETS 8
 typedef struct {
     Widget *items[MAX_WIDGETS];
@@ -78,6 +83,7 @@ static void widget_noop_event(Widget *self, int code) { (void)self; (void)code; 
 /* 다이얼로그는 이벤트 코드 1(닫기)을 받으면 스스로 정리(파괴)된다 */
 static void dialog_on_event(Widget *self, int code);
 
+// 각 VTable 정의
 static const VTable BUTTON_VT = { button_render, widget_noop_event };
 static const VTable LABEL_VT  = { label_render,  widget_noop_event };
 static const VTable DIALOG_VT = { dialog_render, dialog_on_event  };
@@ -92,6 +98,14 @@ static Widget *widget_new(const VTable *vt, int id, const char *label) {
     *   생각해보기: sizeof(Widget) 대신 sizeof *w 로 쓰면 어떤 장점이 있을까?
     */
     Widget *w = malloc(sizeof *w);
+
+    // perror : C에서 시스템 함수가 실패했을 때, 현재 errno 값에 해당하는 오류 메시지를 출력하는 함수(print error)
+    // perror("malloc") : 직전에 실패한 malloc()과 관련된 시스템 오류 메시지를 출력할 때 쓰는 형태
+    // ex) malloc: Cannot allocate memory
+    // exit(1) : 프로그램을 즉시 종료하면서 운영체제에 종료 코드 1을 반환하는 함수
+    // 정상 종료는 보통 0을, 비정상 종료는 1을 사용
+    // strncpy(dest, src, n); : dest에 src를 앞에서부터 n바이트 만큼 복사한다.
+    // src길이가 n이상이면 종료 문자 '\0'가 자동으로 붙지 않기 때문에, 마지막 문자에 직접 추가해줘야 한다.
     if (!w) { perror("malloc"); exit(1); }
     w->vtbl = vt;
     w->id = id;
@@ -110,6 +124,7 @@ static void screen_add(Screen *s, Widget *w) {
     if (s->count < MAX_WIDGETS) s->items[s->count++] = w;
 }
 
+// count <= MAX_WIDGETS 
 static void screen_dispatch(Screen *s, int code) {
     for (int i = 0; i < s->count; i++) {
         Widget *w = s->items[i];
@@ -117,6 +132,7 @@ static void screen_dispatch(Screen *s, int code) {
     }
 }
 
+// 스크린에 위젯 하나씩 그림
 static void screen_render(Screen *s) {
     for (int i = 0; i < s->count; i++) {
         Widget *w = s->items[i];
@@ -154,7 +170,7 @@ int main(void) {
     screen_add(&s, widget_new(&BUTTON_VT, 13, "Cancel"));
 
     printf("frame 1:\n");
-    screen_render(&s);g
+    screen_render(&s);
     screen_dispatch(&s, 1);
 
     /* TODO 닫힌(closed) 위젯을 여기서 정리(free + 해당 슬롯 NULL)할 필요가 있음 */
@@ -163,7 +179,7 @@ int main(void) {
     printf("%s\n", status);
 
     printf("frame 2:\n");
-    screen_render(&s);           
+    screen_render(&s); // <- ※여기서 Welcome, OK까지 실행되고 seg fault 걸림
 
     free(status);
     for (int i = 0; i < s.count; i++) free(s.items[i]);
