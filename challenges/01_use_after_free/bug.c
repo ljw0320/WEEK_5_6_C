@@ -113,7 +113,16 @@ static Widget *widget_new(const VTable *vt, int id, const char *label) {
     *   tip 1. sizeof 는 피연산자를 '실행(역참조)'하지 않고 '타입'만 본다.
     *          → *w 의 타입(Widget)만 필요할 뿐, w 를 실제로 따라가지 않는다.
     *   tip 2. 그래서 sizeof *w 는 (VLA 제외) 컴파일 타임에 sizeof(Widget) 상수로 치환된다.
+    * 
     *   생각해보기: sizeof(Widget) 대신 sizeof *w 로 쓰면 어떤 장점이 있을까?
+    *   => sizeof *w의 가장 큰 장점은 변수의 타입이 바뀌어도 sizeof 부분을 수정할 필요가 없다는 것임
+    * 
+    *   Button *w; 
+    *   w = malloc(sizeof(Widget));   // 실수로 Widget을 그대로 둠
+    *   이렇게 작성하면 w는 Button *인데 Widget 크기만큼 메모리를 할당하는 버그가 생길 수 있다.
+    *   sizeof w*로 쓰면 컴파일러가 자동으로 sizeof(Button)로 판단한다.
+    *   따라서 sizeof *w를 사용하면 포인터 변수의 타입이 바뀌어도 sizeof의 타입명을 따로 수정할 필요가 없어, 
+    *   타입 불일치로 인한 메모리 할당 실수를 줄일 수 있다.
     */
     Widget *w = malloc(sizeof *w);
 

@@ -38,6 +38,7 @@
 
 #define ROWS 14
 enum { SIZE = ROWS * (ROWS + 1) / 2 };   /* 0..ROWS-1 행을 담는 정확한 크기 */
+// 14*15/2 = 105
 
 /* 행 i, 열 j 의 삼각 인덱스 */
 static int tri_index(int i, int j) {
@@ -50,7 +51,7 @@ static void build_pascal(int *tri, int rows) {
         for (int j = 0; j <= i; j++) {
             int idx = tri_index(i, j);
             if (j == 0 || j == i) {
-                tri[idx] = 1;                         /* 양 끝은 1 */
+                tri[idx] = 1; /* 양 끝은 1 */
             } else {
                 int up_left  = tri_index(i - 1, j - 1);
                 int up_right = tri_index(i - 1, j);
@@ -73,7 +74,7 @@ static void print_row(const int *tri, int i) {
 }
 
 int main(void) {
-    int tri[SIZE];
+    int tri[SIZE];    
 
     build_pascal(tri, ROWS);          
 
