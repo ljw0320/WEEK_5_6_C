@@ -115,7 +115,7 @@ static Widget *widget_new(const VTable *vt, int id, const char *label) {
     *   tip 2. 그래서 sizeof *w 는 (VLA 제외) 컴파일 타임에 sizeof(Widget) 상수로 치환된다.
     * 
     *   생각해보기: sizeof(Widget) 대신 sizeof *w 로 쓰면 어떤 장점이 있을까?
-    *   => sizeof *w의 가장 큰 장점은 변수의 타입이 바뀌어도 sizeof 부분을 수정할 필요가 없다는 것임
+    *   => sizeof *w의 가장 큰 장점은 변수의 타입이 바뀌어도 sizeof 부분을 수정할 필요가 없다는 것이다.
     * 
     *   Button *w; 
     *   w = malloc(sizeof(Widget));   // 실수로 Widget을 그대로 둠
