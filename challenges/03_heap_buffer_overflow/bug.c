@@ -9,31 +9,7 @@
  * [기대 동작]
  *   0..N-1 을 100 으로 나눈 나머지를 리스트에 넣고, 길이·용량·합을 출력한 뒤 정상 종료.
  *
- * [증상]
- *   list_ensure() 가 새 용량(newcap)을 계산해 l->cap 에는 반영하지만,
- *   정작 realloc 은 "옛 용량(l->cap)" 으로 호출한다. 즉 논리 용량(cap)은 커지는데
- *   실제 버퍼는 한 세대 뒤처져, push 가 실제 버퍼 밖으로 계속 쓴다.
- *   힙 경계를 넘어 쓰면서 힙 메타데이터가 깨지거나(→ 이후 realloc/free 에서 SIGABRT)
- *   매핑되지 않은 페이지까지 밀고 나가 SIGSEGV. 크래시는 push 의 대입 지점 또는
- *   다음 realloc 에서 나지만, 원인은 ensure 의 realloc 인자다.
  *
- * [gdb 로 잡기]
- *   make gdb NAME=03_heap_buffer_overflow
- *   (gdb) run                         → 크래시(SIGSEGV) 또는 abort
- *   (gdb) bt                          → list_push 의 l->data[l->len]=x 또는 realloc 내부
- *   (gdb) frame N ; print *l           → cap 은 큰데 실제 버퍼는 그보다 작음(불일치)
- *   (gdb) print l->len  / print l->cap → len 이 실제 확보량을 넘어섰는지 확인
- *   (gdb) break list_ensure           → newcap 과 realloc 에 넘기는 크기를 대조
- *
- * [printf(로그)로 잡기]
- *   ensure 에서 (old cap, newcap, realloc 에 넘기는 크기) 를 함께 찍어 불일치를 본다:
- *     fprintf(stderr, "ensure old=%zu new=%zu realloc_bytes=%zu\n",
- *             l->cap, newcap, l->cap * sizeof(int));
- *   → newcap 과 realloc 크기가 다르면 그게 원인.
- *   (stdout 은 버퍼링되니 stderr 로 찍어야 크래시 직전 로그가 남는다)
- *
- * TODO: realloc 은 반드시 "새 용량(newcap)" 으로 호출하고, l->cap 갱신과 순서를 맞춰야 한다.
- *       (성장 로직은 '용량 필드'와 '실제 확보량'이 항상 같도록 유지해야 한다)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,39 +23,60 @@ typedef struct {
      *   tip 2. int 는 보통 32비트라 약 21억(2^31-1)에서 넘치고, 음수도 가능하다.
      *          원소가 그보다 많아지거나 cap*sizeof(int) 계산이 커지면 int 는 오버플로된다.
      *   생각해보기: 크기를 int 로 두면 어떤 버그가 생길 수 있을까?
+     *   1_개수와 크기는 0이상의 정수여야 하는데, 만약 21억보다 큰 값이 들어가면 음수가 나옴. 표현할 수 있는 값을 초과했기 때문.
+     *     size_t는 0~1844경 까지 담을 수 있기 때문에 더 유리.
+     * 
+     *   2_ C의 메모리 크기나 개수와 관련된 표준 기능들은 usigned long를 사용. sizeof, malloc등
+     * 
+     *   3_ 연산 중에 문제가 생길 수 있음. 예를들어 1000만 이라는 숫자를 사용했지만 여기에 1000 정도의 숫자만 곱해도 범위를 초과한다.
+     *      사이즈를 2배씩 10번만 늘려도 문제가 생긴다는 것.
      */
     size_t len;
     size_t cap;
 } IntList;
 
+// list 초기화 : cap, len, data 메모리 동적 할당
 static void list_init(IntList *l) {
     l->cap  = 8;
     l->len  = 0;
-    l->data = malloc(l->cap * sizeof(int));
+    l->data = malloc(l->cap * sizeof(int)); // => 최초 32 바이트
     if (!l->data) { perror("malloc"); exit(1); }
 }
 
+// data 메모리 사이즈 확장
 static void list_ensure(IntList *l, size_t need) {
-    if (need <= l->cap) return;
+    if (need <= l->cap) 
+        return;
 
-    size_t newcap = l->cap ? l->cap * 2 : 8;
-    while (newcap < need) newcap *= 2;
+    size_t newcap = l->cap ? l->cap * 2 : 8; // l->cap이 0이면 8, 아니면 l->cap*2 
 
-    int *p = realloc(l->data, l->cap * sizeof(int));
-    if (!p) { perror("realloc"); free(l->data); exit(1); }
+    while (newcap < need) // 여전히 요구하는 값보다 작다면 2배씩 크기 증가
+        newcap *= 2; 
+
+    // l->data 메모리 크기 재할당 ※realloc이후 주소가 바뀔 수도 있으므로 임시포인터 사용
+    // int *p = realloc(l->data, l->cap * sizeof(int)); // 여기서 죽음! _ljw comment out
+    int *p = realloc(l->data, newcap * sizeof(int));    // _ljw add : l->cap의 크기는 아직 확장되지 않았는데 l->cap만큼 재할당해서 문제가됨. newcap으로 변경
+    
+    if (!p) { perror("realloc"); free(l->data); exit(1); } // NULL이면 에러 코드 표시 후 종료
 
     l->data = p;
     l->cap  = newcap;
 }
 
+// 1. len이 cap과 같으면 list_ensure 실행하여 공간 확장
+// 2. 데이터 배열 len+1 인덱스에 x값 대입 
 static void list_push(IntList *l, int x) {
-    if (l->len == l->cap) list_ensure(l, l->cap + 1);
+    if (l->len == l->cap) 
+        list_ensure(l, l->cap + 1);
+
     l->data[l->len++] = x;
 }
 
+
 static long long list_sum(const IntList *l) {
     long long s = 0;
-    for (size_t i = 0; i < l->len; i++) s += l->data[i];
+    for (size_t i = 0; i < l->len; i++) 
+        s += l->data[i];
     return s;
 }
 
@@ -93,9 +90,11 @@ int main(void) {
     IntList l;
     list_init(&l);
 
-    const int N = 2000000;
-    for (int i = 0; i < N; i++) {
-        list_push(&l, i % 100);        
+    const int N = 2000000; // 200만번
+    for (int i = 0; i < N; i++) { 
+        list_push(&l, i % 100); // 100의 나머지 => 0~99        
+        //printf("i == %d\n",i); // _ljw comment out
+        printf("%d : data[i] == %d\n", i, (&l)->data[i]); // _ljw add
     }
 
     printf("len=%zu cap=%zu sum=%lld\n", l.len, l.cap, list_sum(&l));
