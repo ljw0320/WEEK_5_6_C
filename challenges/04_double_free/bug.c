@@ -16,38 +16,18 @@
  *
  * [기대 동작]
  *   레코드를 만들고 ID/이름으로 조회해 출력한 뒤, 누수 없이 정리하고 정상 종료.
- *
- * [증상]
- *   정리 함수가 "두 인덱스를 각각 순회하며 free" 한다. 하지만 두 인덱스는 같은
- *   Rec 객체들을 공유하므로, by_id 로 한 번, by_name 으로 또 한 번 → 같은 포인터를
- *   두 번 free. glibc 가 "double free or corruption" 으로 SIGABRT.
- *   각 인덱스가 독립된 소유권을 가진 것처럼 착각하기 쉬운 것이 함정.
- *
- * [gdb 로 잡기]
- *   make gdb NAME=04_double_free
- *   (gdb) run                       → abort
- *   (gdb) bt                        → directory_free() 의 두 번째 free 루프
- *   (gdb) frame N ; print d->by_name[i] → 이 주소가 앞서 by_id 로 이미 free 됐는지 확인
- *   (gdb) print d->by_id[0]          
- *
- * [printf(로그)로 잡기]
- *   free 직전마다 주소를 찍어 같은 주소가 두 번 나오는지 본다:
- *     fprintf(stderr, "free rec=%p (%s)\n", (void*)r, tag);
- *   → by_id 루프와 by_name 루프에서 동일 주소가 각각 나오면 이중 해제.
- *   (stdout 은 버퍼링되니 stderr 로 찍어야 크래시 직전 로그가 남는다)
- *
- * TODO: 소유권은 한 곳만 갖게 한다. 예) by_id 를 "소유 인덱스"로 정하고 여기서만 해제,
- *       by_name 은 "관찰용(빌려온) 인덱스"로 두어 절대 free 하지 않는다.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+// 12 바이트 : 4+8
 typedef struct {
     int   id;
     char *name;      
 } Rec;
 
+// 260 바이트 : 8*16 +8*16 +4
 #define MAXN 16
 typedef struct {
     Rec *by_id[MAXN];     
@@ -55,6 +35,7 @@ typedef struct {
     int  count;
 } Directory;
 
+// Rec 포인터 생성. id, name 부여 한 다음 포인터 반환
 static Rec *rec_new(int id, const char *name) {
     Rec *r = malloc(sizeof *r);
     if (!r) { perror("malloc"); exit(1); }
@@ -65,10 +46,11 @@ static Rec *rec_new(int id, const char *name) {
     return r;
 }
 
+// Rec 포인터 생성 후 디렉토리에 반영
 static void directory_add(Directory *d, int id, const char *name) {
     Rec *r = rec_new(id, name);
     d->by_id[d->count]   = r;
-    d->by_name[d->count] = r;      /* 같은 포인터를 두 인덱스에 함께 등록 */
+    d->by_name[d->count] = r;      /* 같은 포인터를 두 인덱스에 함께 등록 <- 문제 발생의 원인*/ 
     d->count++;
 }
 
@@ -85,6 +67,7 @@ static void directory_sort_by_name(Directory *d) {
     }
 }
 
+
 static Rec *find_by_id(Directory *d, int id) {
     for (int i = 0; i < d->count; i++)
         if (d->by_id[i]->id == id) return d->by_id[i];
@@ -99,14 +82,15 @@ static void directory_dump(Directory *d) {
     printf("\n");
 }
 
+// 디렉터리 메모리 해제
 static void directory_free(Directory *d) {
     for (int i = 0; i < d->count; i++) {
-        free(d->by_id[i]->name);
-        free(d->by_id[i]);                 
+        free(d->by_id[i]->name); // rec->name
+        free(d->by_id[i]);  // rec                 
     }
-    for (int i = 0; i < d->count; i++) {
-        free(d->by_name[i]);               
-    }
+    // for (int i = 0; i < d->count; i++) { _ljw comment out
+    //     free(d->by_name[i]); // 이미 위에서 해제된 포인터 이므로 double free 발생              
+    // }
     d->count = 0;
 }
 
