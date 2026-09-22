@@ -27,3 +27,6 @@ vgcore.*
 !.vscode/launch.json
 !.vscode/tasks.json
 !.vscode/extensions.json
+
+# 개인 연습 프로젝트
+.c_practice
