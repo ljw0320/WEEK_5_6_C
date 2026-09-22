@@ -8,50 +8,33 @@
  * [기대 동작]
  *   템플릿의 모든 ${key} 를 설정값으로 치환한 최종 문자열을 출력.
  *
- * [증상]
- *   cfg_get() 은 키가 없으면 NULL 을 돌려준다. expand() 는 이 반환값을 검사하지 않고
- *   곧장 strlen()/memcpy() 에 넘긴다. 템플릿에 설정에 없는 키(${path})가 섞여 있으면
- *   그 순간 v==NULL 이 되어 strlen(NULL) 에서 SIGSEGV.
- *   크래시는 strlen(libc) 안에서 나지만, 원인은 "검사 없이 흘려보낸 NULL 반환값"이다.
- *
- * [gdb 로 잡기]
- *   make gdb NAME=05_null_return_deref
- *   (gdb) run                     → 크래시(SIGSEGV)
- *   (gdb) bt                      → strlen ← expand ← main
- *   (gdb) frame 1 ; print key      → 어떤 키를 찾다가 죽었는지(예: "path")
- *   (gdb) print v                  → v == 0x0 (cfg_get 이 NULL 을 돌려줬음)
- *   (gdb) break expand             → 각 ${key} 마다 cfg_get 결과를 살펴 NULL 을 잡기
- *
- * [printf(로그)로 잡기]
- *   치환 직전 키와 조회 결과 포인터를 함께 찍는다:
- *     fprintf(stderr, "expand key=%s v=%p\n", key, (void*)v);
- *   → v 가 (nil) 로 찍힌 키가 원인.
- *   (stdout 은 버퍼링되니 stderr 로 찍어야 크래시 직전 로그가 남는다)
- *
- * TODO: cfg_get() 의 NULL 반환을 반드시 검사하라. 없는 키는 기본값("")으로 대체하거나
- *       명시적 오류로 처리한다("사용 전에 검사" 원칙).
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define MAX_KV 16
+
+// 20바이트 : 8 + 8 + 4
 typedef struct {
     const char *keys[MAX_KV];
     const char *vals[MAX_KV];
     int n;
 } Config;
 
+// Config key , value, n 셋팅
 static void cfg_set(Config *c, const char *k, const char *v) {
     if (c->n < MAX_KV) { c->keys[c->n] = k; c->vals[c->n] = v; c->n++; }
 }
 
+// keys , vals 순회하여 반환
 static const char *cfg_get(const Config *c, const char *k) {
     for (int i = 0; i < c->n; i++)
         if (strcmp(c->keys[i], k) == 0) return c->vals[i];
     return NULL;                       /* 없는 키 → NULL */
 }
 
+// 
 static void expand(const Config *c, const char *tmpl, char *out, size_t outcap) {
     size_t o = 0;
     for (const char *p = tmpl; *p; ) {
@@ -83,6 +66,7 @@ int main(void) {
      *          채워진다. 즉 keys[], vals[] 배열도 모두 NULL 로 초기화된다.
      *   tip 2. 만약 그냥 "Config cfg;" 로만 뒀다면 지역 변수라 n·keys·vals 가 쓰레기 값이다.
      *   생각해보기: n 이 쓰레기 값이면 cfg_set/cfg_get 에서 무슨 일이 벌어질까?
+     * 
      *               */
     Config cfg = { .n = 0 };
     cfg_set(&cfg, "host", "example.com");
