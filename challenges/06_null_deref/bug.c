@@ -7,6 +7,7 @@
  *
  * [기대 동작]
  *   모든 헤더를 key/value 로 나눠 저장하고 개수와 내용을 출력.
+ * 
  */
 #include <stdio.h>
 #include <stdlib.h>
