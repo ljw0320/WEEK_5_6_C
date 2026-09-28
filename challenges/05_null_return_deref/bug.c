@@ -15,60 +15,107 @@
 
 #define MAX_KV 16
 
-// 20바이트 : 8 + 8 + 4
-typedef struct {
+// 264바이트 : 8*16 + 8*16 + 4 + 4(패딩)
+typedef struct
+{
     const char *keys[MAX_KV];
     const char *vals[MAX_KV];
     int n;
 } Config;
 
 // Config key , value, n 셋팅
-static void cfg_set(Config *c, const char *k, const char *v) {
-    if (c->n < MAX_KV) { c->keys[c->n] = k; c->vals[c->n] = v; c->n++; }
+static void cfg_set(Config *c, const char *k, const char *v)
+{
+    if (c->n < MAX_KV)
+    {
+        c->keys[c->n] = k;
+        c->vals[c->n] = v;
+        c->n++;
+    }
 }
 
 // keys , vals 순회하여 반환
-static const char *cfg_get(const Config *c, const char *k) {
+static const char *cfg_get(const Config *c, const char *k)
+{
     for (int i = 0; i < c->n; i++)
-        if (strcmp(c->keys[i], k) == 0) return c->vals[i];
-    return NULL;                       /* 없는 키 → NULL */
+        if (strcmp(c->keys[i], k) == 0)
+            return c->vals[i];
+    return NULL; /* 없는 키 → NULL */
 }
 
-// 
-static void expand(const Config *c, const char *tmpl, char *out, size_t outcap) {
-    size_t o = 0;
-    for (const char *p = tmpl; *p; ) {
-        if (p[0] == '$' && p[1] == '{') {
-            const char *end = strchr(p, '}');
-            if (!end) break;
+//
+static void expand(const Config *c, const char *tmpl, char *out, size_t outcap)
+{
+    size_t o = 0;                   // o = 24에서 크래시(http://example.com:8080/$)
+    for (const char *p = tmpl; *p;) // p를 tmpl의 첫 문자부터 시작시키고, p가 가리키는 문자가 '\0'이 될 때까지 반복
+    {
+        if (p[0] == '$' && p[1] == '{')
+        {
+            const char *end = strchr(p, '}'); // 문자열에서 } 처음 나타나는 위치를 찾는 함수. "${host}:"의 경우 '}'위치를 반환. 찾는 문자가 없으면 NULL을 반환
+            if (!end)
+                break;
+
             char key[32];
             size_t kl = (size_t)(end - (p + 2));
-            if (kl >= sizeof key) kl = sizeof key - 1;
+
+            if (kl >= sizeof key)
+                kl = sizeof key - 1;
+
             memcpy(key, p + 2, kl);
             key[kl] = '\0';
 
-            const char *v = cfg_get(c, key);      
-            size_t vl = strlen(v);                 
-            if (o + vl < outcap) { memcpy(out + o, v, vl); o += vl; }
+            const char *v = cfg_get(c, key); // v : NULL
+
+            // 방법 1 //
+            size_t vl;
+
+            if (v != NULL) // _ljw add
+                vl = strlen(v);
+
+                if (o + vl < outcap)
+                {
+                    memcpy(out + o, v, vl);
+                    o += vl;
+                }
+            else
+                vl = 0;
+
+            // 방법 2 //
+            if (v == NULL) 
+                v = "";            
+
+            size_t vl = strlen(v);
+
+            if (o + vl < outcap)
+            {
+                memcpy(out + o, v, vl);
+                o += vl;
+            }            
+
             p = end + 1;
-        } else {
-            if (o + 1 < outcap) out[o++] = *p;
+        }
+        else
+        {
+            if (o + 1 < outcap)
+                out[o++] = *p;
             p++;
         }
     }
     out[o] = '\0';
 }
 
-int main(void) {
+int main(void)
+{
     /* [Thinking Point]
      * "{ .n = 0 }" 은 멤버 이름을 콕 집어 초기화하는 '지정 초기화자(designated initializer)'다.
      *   tip 1. 초기화자에 하나라도 값을 주면, 명시하지 않은 나머지 멤버는 전부 0 으로
      *          채워진다. 즉 keys[], vals[] 배열도 모두 NULL 로 초기화된다.
      *   tip 2. 만약 그냥 "Config cfg;" 로만 뒀다면 지역 변수라 n·keys·vals 가 쓰레기 값이다.
      *   생각해보기: n 이 쓰레기 값이면 cfg_set/cfg_get 에서 무슨 일이 벌어질까?
-     * 
+     *   -> 입력하지 않은 값이 들어가 NULL처리가 되지 않고 의도하지 않은 값이 들어갈 수 있다.
+     *   -> cfg.n 자체가 불확정 값 => 잘못된 인덱스 사용 또는 배열 범위를 벗어난 접근이나 '정의되지 않은 동작 유발' 가능
      *               */
-    Config cfg = { .n = 0 };
+    Config cfg = {.n = 0};
     cfg_set(&cfg, "host", "example.com");
     cfg_set(&cfg, "port", "8080");
 
@@ -79,11 +126,14 @@ int main(void) {
      *   tip 2. cfg_get("path") 는 등록되지 않은 키라 NULL 을 돌려준다.
      *   생각해보기: 설정에 없는 키(${path})를 만나면 expand() 는 어떤 값을 받게 되고,
      *               그 값을 검사 없이 strlen/복사에 쓰면 무슨 일이 벌어질까?
-     *               (힌트: "값이 없다"는 NULL 이지 빈 문자열 ""이 아니다) */
+     *               (힌트: "값이 없다"는 NULL 이지 빈 문자열 ""이 아니다)
+     * -> cfg_get()이 NULL을 반환하고, 이를 확인하지 않고 
+     *    strlen()이나 memcpy()에서 문자열 포인터처럼 사용하면 NULL 포인터를 통한 잘못된 메모리 접근이 발생
+     * */
     const char *tmpl = "http://${host}:${port}/${path}/index.html";
     char out[256];
 
-    expand(&cfg, tmpl, out, sizeof out);   /* ${path} 치환 시 NULL 역참조 → 크래시 */
+    expand(&cfg, tmpl, out, sizeof out); /* ${path} 치환 시 NULL 역참조 → 크래시 */
 
     printf("url = %s\n", out);
     return 0;
