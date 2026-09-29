@@ -7,6 +7,7 @@
  *
  * [기대 동작]
  *   모든 조각을 이어 붙인 결과 길이를 출력하고 정상 종료.
+ * 
  */
 #include <stdio.h>
 #include <stdlib.h>
