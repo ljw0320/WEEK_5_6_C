@@ -14,13 +14,18 @@
 #include <string.h>
 
 /* 필요한 총 바이트 수 = 모든 조각 길이 합 + 종료 문자 1 */
+// 인자가 상수 포인터(원본 값도 변경 불가)
+// 문제 : body의 크기를 안읽음
 static size_t joined_size(const char *const *parts, int n)
 {
     size_t total = 1; /* '\0' 자리 */
-    for (int i = 0; i < n - 1; i++)
+
+    //for (int i = 0; i < n - 1; i++) _ljw comment out
+    for (int i = 0; i < n; i++)
     {
         total += strlen(parts[i]);
     }
+
     return total;
 }
 
@@ -28,6 +33,7 @@ static char *join(const char *const *parts, int n)
 {
     size_t need = joined_size(parts, n);
     char *out = malloc(need);
+
     if (!out)
     {
         perror("malloc");
@@ -35,18 +41,20 @@ static char *join(const char *const *parts, int n)
     }
 
     size_t off = 0;
+
+    // 'body'크기로 인한 문제 발생
     for (int i = 0; i < n; i++)
     {
         strcpy(out + off, parts[i]);
         off += strlen(parts[i]);
     }
+
     out[off] = '\0';
     return out;
 }
 
 int main(void)
 {
-
     static char body[200000];
     memset(body, 'x', sizeof body - 1);
     body[sizeof body - 1] = '\0';
@@ -54,7 +62,7 @@ int main(void)
     const char *parts[] = {"GET ", "/index.html", " HTTP/1.1\r\n\r\n", body};
     int n = (int)(sizeof(parts) / sizeof(parts[0]));
 
-    char *msg = join(parts, n); /* 복사 중 힙 오버플로 → 크래시 */
+    char *msg = join(parts, n); /* 복사 중 힙 오버플로 → 크래시 */    
 
     printf("joined length = %zu\n", strlen(msg));
     free(msg);
