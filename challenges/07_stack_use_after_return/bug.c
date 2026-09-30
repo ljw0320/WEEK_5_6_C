@@ -8,7 +8,7 @@
  * [기대 동작]
  *   "alpha / beta / gamma" 세 줄로 쪼갠 뒤, 줄 수와 각 줄 첫 글자의 합을 출력
  *   (lines = 3, checksum = 298).
- * 
+ *
  * [공부 포인트]
  * 1. 포인터를 사용할 때는 주소보다 객체의 생명 주기를 먼저 확인한다.
  * 2. 지역변수의 주소를 함수 밖에서 계속 사용하면 안 된다.
@@ -35,29 +35,29 @@ typedef struct
 
 // 행 분할후 저장
 static void split_lines(LineView *out, char *text)
-{    
+{
     int n = 0;
 
-    // 방법 1 _ 힙 메모리 할당
-    /*
-    char **parts;
-    parts = malloc(sizeof(char *) * MAX_LINES);
+    // // 방법 1 _ 힙 메모리 할당
+    // /*
+    // char **parts;
+    // parts = malloc(sizeof(char *) * MAX_LINES);
+
+    // for (char *ln = strtok(text, "\n"); ln && n < MAX_LINES; ln = strtok(NULL, "\n"))
+    // {
+    //     parts[n++] = ln;
+    // }
+
+    // view_set(out, parts, n);
+    // */
+    // 방법 2 _ 값 직접 저장  -> 지역변수 사용 x
 
     for (char *ln = strtok(text, "\n"); ln && n < MAX_LINES; ln = strtok(NULL, "\n"))
-    {
-        parts[n++] = ln;        
-    }
+        out->lines[n++] = ln;
 
-    view_set(out, parts, n);    
-    */
-    // 방법 2 _ 값 직접 저장  -> 지역변수 사용 x           
-
-    for (char *ln = strtok(text, "\n"); ln && n < MAX_LINES; ln = strtok(NULL, "\n"))    
-        out->lines[n++] = ln;        
-    
     out->count = n;
-    
-    /* TODO 상기 코드를 수정하여 결과를 호출자가 준 out 에 직접 채운다(값 반환 아님, 지역 주소 반환 아님). */       
+
+    /* TODO 상기 코드를 수정하여 결과를 호출자가 준 out 에 직접 채운다(값 반환 아님, 지역 주소 반환 아님). */
 }
 
 // __asm__ : C 코드 안에 어셈블리 코드를 직접 작성할 때 사용하는 GCC 확장 문법
@@ -92,6 +92,6 @@ int main(void)
 
     printf("lines = %d, checksum = %ld\n", v.count, checksum);
 
-    //free(v.lines);
+    // free(v.lines);
     return 0;
 }
